@@ -98,6 +98,13 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
                         PDFで出力
                     </button>
                 </div>
+                <!-- 割引率表示トグル -->
+                <div class="flex items-center gap-2 mt-1">
+                    <label class="flex items-center gap-2 cursor-pointer select-none bg-rose-50 border border-rose-200 rounded-md px-3 py-1.5 text-sm font-medium text-rose-800">
+                        <input type="checkbox" id="show-discount-check" class="w-4 h-4 accent-rose-600" checked onchange="renderAll()">
+                        割引率・定価を表示する
+                    </label>
+                </div>
                 <div id="additional-cost-selector-container" class="hidden w-full bg-indigo-50 border border-indigo-200 rounded-md p-3 text-sm">
                     <div id="init-checkbox-list" class="mb-2"></div>
                     <div id="ps-checkbox-list"></div>
@@ -191,9 +198,17 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
         const b = parseFloat(before) || 0;
         const a = parseFloat(after) || 0;
         const red = '#dc2626';
-        if (b === 0 && a < 0) return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)} (割引)</span>`, percent: 100 };
+        const showDiscount = document.getElementById('show-discount-check')?.checked ?? true;
+
+        if (b === 0 && a < 0) {
+            if (!showDiscount) return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)}</span>`, percent: 100 };
+            return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)} (割引)</span>`, percent: 100 };
+        }
         if (b === 0 || b === a) return { text: formatCurrency(a), percent: 0 };
+
         const percent = Math.round(((b - a) / b) * 100);
+        if (percent === 0) return { text: formatCurrency(a), percent: 0 };
+        if (!showDiscount) return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)}</span>`, percent };
         return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)} (${percent}％OFF)</span>`, percent };
     }
     function onMonthChange(select, index) {

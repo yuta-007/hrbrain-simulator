@@ -384,25 +384,31 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
             const usersVal = visibleInitItems.find(i => i.users && i.users !== '0名')?.users || '';
             const userPart = usersVal ? `・利用人数：${usersVal}<br>` : '';
             rows += `<tr class="flow-row">
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">初期費用（初年度のみ）</td>
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${userPart}${combinedLabel}</td>
-                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(totalBefore, totalAfter).text}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">初期費用（初年度のみ）</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${userPart}${combinedLabel}</td>
+                <td class="border border-gray-300 p-3 align-middle text-right" contenteditable="true">${calculateDiscount(totalBefore, totalAfter).text}</td>
             </tr>`;
         }
 
         // ── 2. 有償サポート（PS）：人事評価構築代行は専用表示、それ以外は通常 ──
         data.supportItems.forEach(item => {
             if (yearMode === 'second' && !item.includedInSecondYear) return;
-            const note = `<br><span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
             const isKochiku = item.detail.includes('人事評価構築代行');
             const itemLabel = isKochiku ? '人事評価構築代行（初年度のみ）' : '有償サポート';
             const detailBody = isKochiku ? '' : `・${item.detail}`;
             const hasUsers = item.users && String(item.users).trim() !== '' && String(item.users).trim() !== '-';
-            const displayUserPart = hasUsers ? `・利用人数：${item.users}<br>` : '';
+            const displayUserPart = hasUsers ? `・利用人数：${item.users}` : '';
+            // 構築代行は利用人数の直後に改行なしで注記、それ以外は改行あり
+            const note = isKochiku
+                ? `<br><span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`
+                : `<br><span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
+            const detailContent = isKochiku
+                ? `${displayUserPart}${note}`
+                : `${displayUserPart ? displayUserPart + '<br>' : ''}${detailBody}${note}`;
             rows += `<tr class="flow-row">
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${itemLabel}</td>
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${displayUserPart}${detailBody}${note}</td>
-                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${itemLabel}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${detailContent}</td>
+                <td class="border border-gray-300 p-3 align-middle text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
             </tr>`;
         });
 
@@ -413,9 +419,9 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
             const userPart = (item.users && item.users !== '0名') ? `・利用人数：${item.users}<br>` : '';
             const note = `<span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
             rows += `<tr class="flow-row">
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">CSVバッチ連携初期構築費用</td>
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${userPart}${note}</td>
-                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">CSVバッチ連携初期構築費用</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${userPart}${note}</td>
+                <td class="border border-gray-300 p-3 align-middle text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
             </tr>`;
         });
 
@@ -429,9 +435,9 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
             const userPart = (item.users && item.users !== '0名') ? `・利用人数：${item.users}<br>` : '';
             const note = `<span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
             rows += `<tr class="flow-row">
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${displayName}</td>
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${userPart}${note}</td>
-                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${displayName}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${userPart}${note}</td>
+                <td class="border border-gray-300 p-3 align-middle text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
             </tr>`;
         });
 
@@ -468,9 +474,9 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
             // 詳細テキストの先頭に「・」を付ける
             const detailHtml = item.detail ? `・${item.detail}` : '';
             rows += `<tr>
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${displayItemName}${suffix}</td>
-                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${item.users !== '0名' ? `・${uLabel}：${item.users}<br>` : ''}${detailHtml}${noteHtml}</td>
-                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(b, a).text}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${displayItemName}${suffix}</td>
+                <td class="border border-gray-300 p-3 align-middle" contenteditable="true">${item.users !== '0名' ? `・${uLabel}：${item.users}<br>` : ''}${detailHtml}${noteHtml}</td>
+                <td class="border border-gray-300 p-3 align-middle text-right" contenteditable="true">${calculateDiscount(b, a).text}</td>
             </tr>`;
         });
 

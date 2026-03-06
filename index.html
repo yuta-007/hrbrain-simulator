@@ -805,12 +805,12 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
                 flowTotal += afterP;
                 flowLines.push(tag);
             } else if (cat === 'オプション') {
-                // ストック系オプションは月額×12で合計へ
-                stockTotal += afterP * 12;
+                // オプションは月額のまま合計へ
+                stockTotal += afterP;
                 optionLines.push(tag);
             } else {
-                // ストック：月額×12
-                stockTotal += afterP * 12;
+                // ストック：月額のまま
+                stockTotal += afterP;
                 stockLines.push(tag);
             }
         });
@@ -820,7 +820,7 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
         const output = [
             '■合計金額：',
             `[フロー]${formatYen(flowTotal)}`,
-            `[ストック]${formatYen(stockTotal)}`,
+            `[ストック]${formatYen(stockTotal)}/月`,
             '',
             '■詳細金額：',
             ...allDetailLines

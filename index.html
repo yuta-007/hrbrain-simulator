@@ -626,29 +626,125 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
         const loading = document.getElementById('pdf-loading');
         loading.classList.add('active');
         try {
-            const canvas = await generateCanvas();
             const { jsPDF } = window.jspdf;
 
-            // 画像の縦横比を見て向きを自動選択
-            const isLandscape = canvas.width > canvas.height;
-            const pdf = new jsPDF({ orientation: isLandscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
-            const pageW = pdf.internal.pageSize.getWidth();
-            const pageH = pdf.internal.pageSize.getHeight();
-            const margin = 14;
-            const printW = pageW - margin * 2;
-            const printH = pageH - margin * 2;
+            // ── 行数で向き・フォントを決定 ──
+            const rowCount = document.querySelectorAll('#quote-table-container tbody tr').length;
+            const isLandscape = rowCount <= 10; // 10行以下は横向き
+            const orientation = isLandscape ? 'landscape' : 'portrait';
 
-            // 縦横比を保ちつつ印刷領域に収める
-            const ratio = canvas.width / canvas.height;
-            let drawW = printW;
-            let drawH = drawW / ratio;
-            if (drawH > printH) { drawH = printH; drawW = drawH * ratio; }
+            // A4サイズ (mm)
+            const PAGE_W_MM = isLandscape ? 297 : 210;
+            const PAGE_H_MM = isLandscape ? 210 : 297;
+            const MARGIN_MM = 10; // 上下左右1cm
+            const PRINT_W_MM = PAGE_W_MM - MARGIN_MM * 2;
+            const PRINT_H_MM = PAGE_H_MM - MARGIN_MM * 2;
 
-            // 余白均等（上下左右センタリング）
-            const x = margin + (printW - drawW) / 2;
-            const y = margin + (printH - drawH) / 2;
+            // キャプチャ用ピクセル幅 (96dpi基準)
+            const MM_TO_PX = 96 / 25.4;
+            const PRINT_W_PX = Math.round(PRINT_W_MM * MM_TO_PX);
 
-            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, drawW, drawH);
+            // ── 行数・向きに応じてフォント・パディングを決定 ──
+            let fontSize, cellPadding;
+            if (isLandscape) {
+                // 横向き：余裕があるので大きめ
+                if      (rowCount <= 5)  { fontSize = 14; cellPadding = 12; }
+                else if (rowCount <= 7)  { fontSize = 13; cellPadding = 10; }
+                else if (rowCount <= 9)  { fontSize = 12; cellPadding = 8; }
+                else                     { fontSize = 11; cellPadding = 7; }
+            } else {
+                // 縦向き：詰め気味
+                if      (rowCount <= 12) { fontSize = 11; cellPadding = 7; }
+                else if (rowCount <= 14) { fontSize = 10; cellPadding = 6; }
+                else                     { fontSize = 9;  cellPadding = 5; }
+            }
+
+            // ── capture-area を一時的にPDF幅へ変更 ──
+            const area = document.getElementById('capture-area');
+            const origWidth   = area.style.width;
+            const origPadding = area.style.padding;
+            area.style.width   = PRINT_W_PX + 'px';
+            area.style.padding = '0px';
+
+            // セルのフォント・パディングを一時変更
+            const cells = area.querySelectorAll('td, th');
+            const origStyles = [];
+            cells.forEach(cell => {
+                origStyles.push({ fs: cell.style.fontSize, p: cell.style.padding });
+                cell.style.fontSize = fontSize + 'px';
+                cell.style.padding  = cellPadding + 'px';
+            });
+
+            // 見出しフォント
+            const headings = area.querySelectorAll('h2, h3');
+            const origHeadStyles = [];
+            headings.forEach(h => {
+                origHeadStyles.push(h.style.fontSize);
+                h.style.fontSize = (fontSize + 4) + 'px';
+            });
+
+            // 備考フォント（常に読みやすいサイズを確保）
+            const remarkItems = area.querySelectorAll('#remarks-container, #remarks-container li, #remarks-container p');
+            const origRemarkStyles = [];
+            remarkItems.forEach(r => {
+                origRemarkStyles.push(r.style.fontSize);
+                r.style.fontSize = Math.max(fontSize + 1, 12) + 'px';
+            });
+
+            // リサイザー非表示・セレクト→テキスト変換
+            const resizers = area.querySelectorAll('.col-resizer');
+            resizers.forEach(r => r.style.display = 'none');
+            const selects = area.querySelectorAll('select.month-select');
+            const selectBackups = [];
+            selects.forEach(s => {
+                const span = document.createElement('span');
+                span.textContent = s.value;
+                span.className = 'font-bold underline mx-1';
+                s.parentNode.insertBefore(span, s);
+                s.style.display = 'none';
+                selectBackups.push({ s, span });
+            });
+
+            // キャプチャ
+            const canvas = await html2canvas(area, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                width: PRINT_W_PX,
+                windowWidth: PRINT_W_PX
+            });
+
+            // ── 後片付け ──
+            selectBackups.forEach(b => { b.span.remove(); b.s.style.display = 'inline-block'; });
+            resizers.forEach(r => r.style.display = '');
+            cells.forEach((cell, i) => { cell.style.fontSize = origStyles[i].fs; cell.style.padding = origStyles[i].p; });
+            headings.forEach((h, i) => { h.style.fontSize = origHeadStyles[i]; });
+            remarkItems.forEach((r, i) => { r.style.fontSize = origRemarkStyles[i]; });
+            area.style.width   = origWidth;
+            area.style.padding = origPadding;
+
+            // ── PDF生成：1枚に収める（縦横比を維持してスケール）──
+            const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+
+            const imgW_MM = PRINT_W_MM;
+            const imgH_MM = (canvas.height / canvas.width) * imgW_MM;
+
+            let finalW = imgW_MM;
+            let finalH = imgH_MM;
+
+            // 高さがはみ出す場合は縮小して1枚に収める
+            if (finalH > PRINT_H_MM) {
+                const scale = PRINT_H_MM / finalH;
+                finalH = PRINT_H_MM;
+                finalW = imgW_MM * scale;
+            }
+
+            // 上下左右中央に配置
+            const x = MARGIN_MM + (PRINT_W_MM - finalW) / 2;
+            const y = MARGIN_MM + (PRINT_H_MM - finalH) / 2;
+
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, finalW, finalH);
+
             const companyName = document.getElementById('company-name').value.trim() || '株式会社xx';
             pdf.save(`【見積書】${companyName}御中.pdf`);
         } catch(err) {

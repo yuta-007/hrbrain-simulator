@@ -38,6 +38,18 @@
 
     <div id="input-form">
         <h2 class="text-2xl font-semibold text-gray-800 mb-6">1. 提案プラン入力</h2>
+
+        <!-- 社名入力 -->
+        <div class="mb-4">
+            <label for="company-name" class="block text-sm font-semibold text-gray-700 mb-1">顧客社名</label>
+            <div class="flex items-center gap-2">
+                <input type="text" id="company-name" placeholder="株式会社HRBrain"
+                    class="w-72 px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    oninput="updateCompanyTitle()">
+                <span class="text-gray-500 text-sm">→ PDF出力ファイル名：<span id="pdf-title-preview" class="font-semibold text-gray-700">【見積書】株式会社HRBrain御中</span></span>
+            </div>
+        </div>
+
         <textarea id="proposal-text" class="w-full h-80 p-4 border border-gray-300 rounded-md shadow-sm font-mono text-sm" placeholder="初期費用_タレントマネジメント_50名_250,000円_250,000円
 タレントマネジメント_社員名簿/人事評価_50名_100,000円_100,000円
 初期費用_採用ソリューション_50名_250,000円_0円
@@ -120,6 +132,9 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
 
         <div class="overflow-x-auto border border-gray-200 rounded-lg p-1 bg-gray-50">
             <div id="capture-area" class="bg-white mx-auto origin-top-left flex flex-col p-8" style="width: 1200px;">
+                <div id="quote-doc-title" class="mb-6 border-b pb-4">
+                    <h2 id="quote-company-heading" class="text-2xl font-bold text-gray-900">【見積書】株式会社HRBrain御中</h2>
+                </div>
                 <div id="quote-table-container" class="shadow-md rounded-lg"></div>
                 <h3 class="text-xl font-semibold text-gray-800 mt-8 mb-4">■ 備考</h3>
                 <div id="remarks-container" contenteditable="true" class="border border-gray-300 rounded-md p-4 text-sm bg-white shadow-sm prose max-w-none"></div>
@@ -155,6 +170,14 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
     let colWidths = [22, 35, 43];
     // 契約期間設定
     let contractPeriod = { enabled: false, startYear: new Date().getFullYear(), startMonth: 4, endYear: new Date().getFullYear() + 1, endMonth: 3, months: 12 };
+
+    function updateCompanyTitle() {
+        const name = document.getElementById('company-name').value.trim() || '株式会社xx';
+        const title = `【見積書】${name}御中`;
+        document.getElementById('pdf-title-preview').textContent = title;
+        const heading = document.getElementById('quote-company-heading');
+        if (heading) heading.textContent = title;
+    }
 
     function formatCurrency(num) {
         if (isNaN(num)) return "0円";
@@ -605,7 +628,8 @@ PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
             const y = margin + (printH - drawH) / 2;
 
             pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, drawW, drawH);
-            pdf.save('見積もり.pdf');
+            const companyName = document.getElementById('company-name').value.trim() || '株式会社xx';
+            pdf.save(`【見積書】${companyName}御中.pdf`);
         } catch(err) {
             console.error(err);
             alert('PDF生成に失敗しました。');

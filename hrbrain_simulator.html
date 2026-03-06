@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRBrain 見積もりシミュレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: "Inter", "Noto Sans JP", sans-serif; }
+        #quote-table-container { overflow-x: hidden; min-width: 100%; border: 1px solid #D1D5DB; background-color: white; }
+        td[contenteditable="true"]:hover { background-color: #f9fafb; outline: 1px dashed #cbd5e1; }
+        td[contenteditable="true"]:focus { background-color: #eff6ff; outline: 2px solid #3b82f6; outline-offset: -2px; }
+        .month-select { display: inline-block; background-color: #eff6ff; border: 1px solid #3b82f6; border-radius: 4px; color: #1e40af; font-weight: bold; padding: 0 4px; font-size: 0.9em; cursor: pointer; appearance: auto; }
+        #quote-table-container table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+        #quote-table-container th { position: relative; white-space: nowrap; overflow: hidden; }
+        #quote-table-container td { word-break: break-word; overflow-wrap: break-word; }
+        .col-resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; user-select: none; background: transparent; }
+        .col-resizer:hover, .col-resizer.resizing { background: #3b82f6; opacity: 0.6; }
+        tr.flow-row td { background-color: #f8faff; }
+        tr.total-row td { background-color: #E6F9F1; color: #00854C; font-weight: bold; font-size: 1.05em; }
+        #pdf-loading { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 9999; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: white; font-size: 1.1rem; }
+        #pdf-loading.active { display: flex; }
+        .spinner { width: 48px; height: 48px; border: 5px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+
+<div id="pdf-loading"><div class="spinner"></div><span>PDF生成中...</span></div>
+
+<div class="max-w-7xl mx-auto bg-white shadow-2xl rounded-lg p-6 md:p-10">
+    <header class="mb-8 border-b pb-4 text-center">
+        <h1 class="text-3xl font-bold text-gray-900">HRBrain 見積もりシミュレーター</h1>
+        <p class="text-gray-600 mt-2"> </p>
+    </header>
+
+    <div id="input-form">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">1. 提案プラン入力</h2>
+        <textarea id="proposal-text" class="w-full h-80 p-4 border border-gray-300 rounded-md shadow-sm font-mono text-sm" placeholder="初期費用_タレントマネジメント_50名_250,000円_250,000円
+タレントマネジメント_社員名簿/人事評価_50名_100,000円_100,000円
+初期費用_採用ソリューション_50名_250,000円_0円
+採用ソリューション_SL_50名_50,000円_50,000円
+採用ソリューション_OL_50名_50,000円_50,000円
+PS/その他_人事評価構築代行_50名_1,000,000円_1,000,000円
+PS/その他_有償サポート内容_50名_500,000円_500,000円"></textarea>
+
+        <div class="flex flex-col items-center justify-center my-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <h3 class="font-semibold text-gray-700 mb-3">表示オプション（合算設定）</h3>
+            <div class="flex flex-wrap justify-center gap-6">
+                <div class="flex items-center">
+                    <input type="checkbox" id="merge-bpaas-check" class="w-5 h-5 text-green-600 border-gray-300 rounded" checked>
+                    <label for="merge-bpaas-check" class="ml-2 text-gray-800 font-medium cursor-pointer">BPaaS費用を合算</label>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="merge-worksuite-check" class="w-5 h-5 text-blue-600 border-gray-300 rounded" checked>
+                    <label for="merge-worksuite-check" class="ml-2 text-gray-800 font-medium cursor-pointer">WorkSuite費用を合算</label>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="merge-recruitment-check" class="w-5 h-5 text-orange-600 border-gray-300 rounded" checked>
+                    <label for="merge-recruitment-check" class="ml-2 text-gray-800 font-medium cursor-pointer">採用ソリューション同士を合算</label>
+                </div>
+            </div>
+        </div>
+        <div class="text-center">
+            <button onclick="generateQuote()" class="bg-green-600 text-white px-10 py-3 rounded-lg hover:bg-green-700 shadow-lg font-semibold transition">見積もり作成</button>
+        </div>
+    </div>
+
+    <div id="message-box" class="hidden my-4 p-4 rounded-lg relative" role="alert">
+        <strong class="font-bold" id="message-title"></strong>
+        <span class="block sm:inline" id="message-text"></span>
+        <button class="absolute top-0 bottom-0 right-0 px-4 py-3" onclick="document.getElementById('message-box').classList.add('hidden')">×</button>
+    </div>
+
+    <div id="output-section" class="mt-12" style="display: none;">
+        <div class="flex flex-col xl:flex-row justify-between xl:items-end mb-4 gap-4">
+            <h2 class="text-2xl font-semibold text-gray-800">シミュレーション結果： 見積内容</h2>
+            <div class="flex flex-col items-end gap-2">
+                <div class="flex flex-wrap gap-2 justify-end">
+                    <button id="toggle-year-btn" onclick="toggleYearMode()" class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold h-10 shadow-md">2年目以降を表示</button>
+                    <button id="toggle-display-btn" onclick="toggleDisplay()" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold h-10 shadow-md">月額表示に切り替え</button>
+                    <button onclick="exportPDF()" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold h-10 shadow-md hover:bg-red-700 transition flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+                        PDFで出力
+                    </button>
+                </div>
+                <div id="additional-cost-selector-container" class="hidden w-full bg-indigo-50 border border-indigo-200 rounded-md p-3 text-sm">
+                    <div id="init-checkbox-list" class="mb-2"></div>
+                    <div id="ps-checkbox-list"></div>
+                </div>
+                <!-- 契約期間カスタム設定パネル -->
+                <div class="w-full bg-amber-50 border border-amber-200 rounded-md p-3 text-sm mt-1">
+                    <label class="flex items-center gap-2 font-semibold text-amber-800 cursor-pointer mb-2">
+                        <input type="checkbox" id="custom-period-check" class="w-4 h-4" onchange="toggleContractPeriod()">
+                        カスタム契約期間を設定（クロスセル・24ヶ月契約など）
+                    </label>
+                    <div id="contract-period-inputs" class="hidden flex flex-wrap gap-3 items-center text-gray-700">
+                        <div class="flex items-center gap-1">
+                            <span class="text-xs font-medium">開始：</span>
+                            <input type="number" id="cp-start-year" class="border border-gray-300 rounded px-2 py-1 w-20 text-sm" value="2026" min="2020" max="2040" onchange="updateContractPeriod()">年
+                            <select id="cp-start-month" class="border border-gray-300 rounded px-1 py-1 text-sm" onchange="updateContractPeriod()">
+                                <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option><option value="4" selected>4月</option><option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option><option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+                            </select>
+                        </div>
+                        <span class="text-gray-400">〜</span>
+                        <div class="flex items-center gap-1">
+                            <span class="text-xs font-medium">終了：</span>
+                            <input type="number" id="cp-end-year" class="border border-gray-300 rounded px-2 py-1 w-20 text-sm" value="2027" min="2020" max="2040" onchange="updateContractPeriod()">年
+                            <select id="cp-end-month" class="border border-gray-300 rounded px-1 py-1 text-sm" onchange="updateContractPeriod()">
+                                <option value="1">1月</option><option value="2">2月</option><option value="3" selected>3月</option><option value="4">4月</option><option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option><option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+                            </select>
+                        </div>
+                        <span id="cp-months-label" class="ml-2 px-2 py-1 bg-amber-100 rounded text-amber-800 font-bold text-xs">12ヶ月</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto border border-gray-200 rounded-lg p-1 bg-gray-50">
+            <div id="capture-area" class="bg-white mx-auto origin-top-left flex flex-col p-8" style="width: 1200px;">
+                <div id="quote-table-container" class="shadow-md rounded-lg"></div>
+                <h3 class="text-xl font-semibold text-gray-800 mt-8 mb-4">■ 備考</h3>
+                <div id="remarks-container" contenteditable="true" class="border border-gray-300 rounded-md p-4 text-sm bg-white shadow-sm prose max-w-none"></div>
+            </div>
+        </div>
+        <div id="calculation-details" class="hidden"></div>
+    </div>
+
+    <!-- ====== Section 3: バクラク/Sapozu共有用Format ====== -->
+    <div id="sapozu-section" class="mt-12" style="display:none;">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">3. バクラク/Sapozu共有用Format</h2>
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 relative">
+            <button onclick="copySapozuText()" class="absolute top-3 right-3 bg-gray-700 hover:bg-gray-900 text-white text-xs px-3 py-1.5 rounded-md transition flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-4 10h6a2 2 0 002-2v-8a2 2 0 00-2-2h-6a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                コピー
+            </button>
+            <pre id="sapozu-output" class="text-sm font-mono whitespace-pre-wrap text-gray-800 leading-relaxed pr-20"></pre>
+        </div>
+        <div id="sapozu-copy-toast" class="hidden mt-2 text-green-600 text-sm font-medium">✓ クリップボードにコピーしました</div>
+    </div>
+</div>
+
+<div id="context-menu" class="hidden fixed bg-white border border-gray-300 rounded-md shadow-lg py-1 z-50">
+    <a href="#" id="open-image-tab-btn" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">新しいタブで画像を開く</a>
+    <a href="#" id="save-image-btn" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">画像として保存 (PNG)</a>
+</div>
+
+<script>
+    let currentQuoteData = {};
+    let currentDisplayMode = 'yearly';
+    let currentYearMode = 'first';
+    // 列幅（%）合計100で管理
+    let colWidths = [22, 35, 43];
+    // 契約期間設定
+    let contractPeriod = { enabled: false, startYear: new Date().getFullYear(), startMonth: 4, endYear: new Date().getFullYear() + 1, endMonth: 3, months: 12 };
+
+    function formatCurrency(num) {
+        if (isNaN(num)) return "0円";
+        return new Intl.NumberFormat('ja-JP').format(Math.round(num)) + "円";
+    }
+    function parsePrice(text) {
+        if (!text) return 0;
+        return parseFloat(text.split('(')[0].replace(/[円,]/g, '').trim()) || 0;
+    }
+    function calculateDiscount(before, after) {
+        const b = parseFloat(before) || 0;
+        const a = parseFloat(after) || 0;
+        const red = '#dc2626';
+        if (b === 0 && a < 0) return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)} (割引)</span>`, percent: 100 };
+        if (b === 0 || b === a) return { text: formatCurrency(a), percent: 0 };
+        const percent = Math.round(((b - a) / b) * 100);
+        return { text: `${formatCurrency(b)} → <span style="color:${red};font-weight:bold;">${formatCurrency(a)} (${percent}％OFF)</span>`, percent };
+    }
+    function onMonthChange(select, index) {
+        currentQuoteData.systemItems[index].months = parseInt(select.value);
+        renderAll();
+    }
+    function toggleDisplay() {
+        currentDisplayMode = (currentDisplayMode === 'yearly') ? 'monthly' : 'yearly';
+        document.getElementById('toggle-display-btn').textContent = (currentDisplayMode === 'yearly') ? '月額表示に切り替え' : '年額表示に切り替え';
+        renderAll();
+    }
+    function toggleYearMode() {
+        currentYearMode = (currentYearMode === 'first') ? 'second' : 'first';
+        const btn = document.getElementById('toggle-year-btn');
+        const container = document.getElementById('additional-cost-selector-container');
+        if (currentYearMode === 'second') {
+            btn.textContent = '初年度を表示';
+            container.classList.remove('hidden');
+            renderAdditionalCostSelector();
+        } else {
+            btn.textContent = '2年目以降を表示';
+            container.classList.add('hidden');
+        }
+        renderAll();
+    }
+
+    function toggleContractPeriod() {
+        contractPeriod.enabled = document.getElementById('custom-period-check').checked;
+        document.getElementById('contract-period-inputs').classList.toggle('hidden', !contractPeriod.enabled);
+        if (contractPeriod.enabled) updateContractPeriod();
+        else renderAll();
+    }
+    function updateContractPeriod() {
+        const sy = parseInt(document.getElementById('cp-start-year').value);
+        const sm = parseInt(document.getElementById('cp-start-month').value);
+        const ey = parseInt(document.getElementById('cp-end-year').value);
+        const em = parseInt(document.getElementById('cp-end-month').value);
+        const months = (ey * 12 + em) - (sy * 12 + sm) + 1;
+        if (months < 1) return;
+        contractPeriod.startYear = sy; contractPeriod.startMonth = sm;
+        contractPeriod.endYear = ey; contractPeriod.endMonth = em;
+        contractPeriod.months = months;
+        document.getElementById('cp-months-label').textContent = `${months}ヶ月`;
+        renderAll();
+    }
+    function getContractMonths() {
+        return (contractPeriod.enabled && currentYearMode === 'first') ? contractPeriod.months : 12;
+    }
+    function getFirstYearTotalLabel(isM) {
+        if (contractPeriod.enabled && !isM && currentYearMode === 'first') {
+            const sy = contractPeriod.startYear, sm = contractPeriod.startMonth;
+            const ey = contractPeriod.endYear, em = contractPeriod.endMonth;
+            return `合計費用/${contractPeriod.months}ヶ月（${sy}年${sm}月〜${ey}年${em}月）`;
+        }
+        return "初年度合計/年";
+    }
+    function getInitProductName(name) {
+        if (name.includes('タレントマネジメント')) return 'タレントマネジメント';
+        if (name.includes('労務管理') || name.includes('労務')) return '労務管理';
+        if (name.includes('組織診断サーベイ') || name.includes('サーベイ')) return '組織診断サーベイ';
+        if (name.includes('採用')) return '採用ソリューション';
+        if (name.includes('BPaaS') || name.includes('BPaaSチケット')) return 'BPaaSチケット';
+        return name;
+    }
+
+    function generateQuote() {
+        const text = document.getElementById('proposal-text').value;
+        if (!text.trim()) return;
+        currentQuoteData = { initItems: [], supportItems: [], systemItems: [], totals: {}, rawLines: [] };
+        const shouldMergeBpaas = document.getElementById('merge-bpaas-check').checked;
+        const shouldMergeWorkSuite = document.getElementById('merge-worksuite-check').checked;
+        const shouldMergeRecruitment = document.getElementById('merge-recruitment-check').checked;
+
+        text.split('\n').forEach(line => {
+            line = line.trim();
+            if (!line || line.startsWith('■')) return;
+            const parts = line.split('_');
+            if (parts.length < 5) return;
+            const afterP = parsePrice(parts[parts.length - 1]);
+            const beforeP = parsePrice(parts[parts.length - 2]);
+            const users = parts[parts.length - 3];
+            const fullName = parts.slice(0, parts.length - 3).join('_');
+
+            // 生の行データを保存（バクラク/Sapozu用）
+            currentQuoteData.rawLines.push({ line, parts, beforeP, afterP, users, fullName });
+
+            if (fullName.includes('BPaaSチケット') || parts[0].startsWith('初期費用')) {
+                const rawName = fullName.includes('BPaaS') ? fullName : parts.slice(1, parts.length - 3).join('_');
+                let subtype = 'normal';
+                if (fullName.includes('BPaaSチケット')) subtype = 'bpaas';
+                else if (rawName.includes('CSVバッチ')) subtype = 'csv';
+                currentQuoteData.initItems.push({ name: rawName, users, before: beforeP, after: afterP, includedInSecondYear: false, subtype });
+            } else if (parts[0].startsWith('PS/その他')) {
+                const psDetail = parts.slice(1, parts.length - 3).join('_');
+                currentQuoteData.supportItems.push({ detail: psDetail, before: beforeP, after: afterP, users, includedInSecondYear: false });
+            } else {
+                currentQuoteData.systemItems.push({ name: parts[0], detail: parts.slice(1, parts.length - 3).join('_'), users, monthBefore: beforeP, monthAfter: afterP, months: 12 });
+            }
+        });
+
+        let main = currentQuoteData.systemItems.find(i => i.name.includes('タレントマネジメント') || i.name.includes('労務管理'));
+        if (main) {
+            let mList = currentQuoteData.systemItems.filter(i => {
+                if (i === main) return false;
+                return (i.name.startsWith('BPaaS') && shouldMergeBpaas) || (i.name.startsWith('WorkSuite') && shouldMergeWorkSuite);
+            });
+            mList.forEach(m => { main.monthBefore += m.monthBefore; main.monthAfter += m.monthAfter; });
+            // WorkSuiteが含まれていれば機能名に追加
+            const hasWorkSuite = mList.some(m => m.name.startsWith('WorkSuite'));
+            if (hasWorkSuite && shouldMergeWorkSuite) {
+                if (!main.detail.includes('Work Suite')) {
+                    main.detail = main.detail.replace(/(<br>運用代行込み)?$/, '') + '/Work Suite';
+                }
+            }
+            currentQuoteData.systemItems = currentQuoteData.systemItems.filter(i => !mList.includes(i));
+        }
+
+        if (shouldMergeRecruitment) {
+            let recList = currentQuoteData.systemItems.filter(i => i.name.includes('採用'));
+            if (recList.length > 1) {
+                recList[0].monthBefore = recList.reduce((s, i) => s + i.monthBefore, 0);
+                recList[0].monthAfter  = recList.reduce((s, i) => s + i.monthAfter, 0);
+                recList[0].detail = recList.map(i => i.detail).join(' / ');
+                currentQuoteData.systemItems = currentQuoteData.systemItems.filter(i => !recList.slice(1).includes(i));
+            }
+            let recInitList = currentQuoteData.initItems.filter(i => i.name.includes('採用'));
+            if (recInitList.length > 1) {
+                recInitList[0].before = recInitList.reduce((s, i) => s + i.before, 0);
+                recInitList[0].after  = recInitList.reduce((s, i) => s + i.after, 0);
+                currentQuoteData.initItems = currentQuoteData.initItems.filter(i => !recInitList.slice(1).includes(i));
+            }
+        }
+
+        calculateTotals();
+        renderAll();
+        document.getElementById('output-section').style.display = 'block';
+        document.getElementById('sapozu-section').style.display = 'block';
+        renderSapozuFormat();
+    }
+
+    function calculateTotals() {
+        const cMonths = getContractMonths();
+        let t = { initB: 0, initA: 0, recurYB: 0, recurYA: 0 };
+        currentQuoteData.initItems.forEach(i => { if (!(i.before === 0 && i.after === 0)) { t.initB += i.before; t.initA += i.after; } });
+        currentQuoteData.supportItems.forEach(i => { t.initB += i.before; t.initA += i.after; });
+        currentQuoteData.systemItems.forEach(i => { t.recurYB += i.monthBefore * cMonths; t.recurYA += i.monthAfter * cMonths; });
+        currentQuoteData.totals = { firstYearB: t.initB + t.recurYB, firstYearA: t.initA + t.recurYA, recurringYB: t.recurYB, recurringYA: t.recurYA, initB: t.initB, initA: t.initA };
+    }
+
+    function renderAll() {
+        calculateTotals();
+        renderQuoteTable(currentQuoteData, currentDisplayMode, currentYearMode);
+        renderRemarks(currentQuoteData, currentYearMode);
+        initResizableColumns();
+    }
+
+    function renderQuoteTable(data, displayMode, yearMode) {
+        let rows = "";
+        let runMB = 0, runMA = 0;
+        const isM = (displayMode === 'monthly');
+
+        // ── 1. 通常初期費用（normalのみ）を1行にまとめる ──
+        const visibleInitItems = data.initItems.filter(i => {
+            if (i.subtype === 'bpaas' || i.subtype === 'csv') return false;
+            if (yearMode === 'second' && !i.includedInSecondYear) return false;
+            return !(i.before === 0 && i.after === 0);
+        });
+        if (visibleInitItems.length > 0) {
+            const uniqueNames = [...new Set(visibleInitItems.map(i => getInitProductName(i.name)))];
+            const combinedLabel = `アカウント開設費（${uniqueNames.join('/')}）`;
+            const totalBefore = visibleInitItems.reduce((s, i) => s + i.before, 0);
+            const totalAfter  = visibleInitItems.reduce((s, i) => s + i.after, 0);
+            const usersVal = visibleInitItems.find(i => i.users && i.users !== '0名')?.users || '';
+            const userPart = usersVal ? `・利用人数：${usersVal}<br>` : '';
+            rows += `<tr class="flow-row">
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">初期費用（初年度のみ）</td>
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${userPart}${combinedLabel}</td>
+                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(totalBefore, totalAfter).text}</td>
+            </tr>`;
+        }
+
+        // ── 2. 有償サポート（PS）：人事評価構築代行は専用表示、それ以外は通常 ──
+        data.supportItems.forEach(item => {
+            if (yearMode === 'second' && !item.includedInSecondYear) return;
+            const note = `<br><span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
+            const isKochiku = item.detail.includes('人事評価構築代行');
+            const itemLabel = isKochiku ? '人事評価構築代行（初年度のみ）' : '有償サポート';
+            const detailBody = isKochiku ? '' : `・${item.detail}`;
+            const hasUsers = item.users && String(item.users).trim() !== '' && String(item.users).trim() !== '-';
+            const displayUserPart = hasUsers ? `・利用人数：${item.users}<br>` : '';
+            rows += `<tr class="flow-row">
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${itemLabel}</td>
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${displayUserPart}${detailBody}${note}</td>
+                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
+            </tr>`;
+        });
+
+        // ── 3. CSVバッチ連携：専用行（subtype='csv'）──
+        const csvItems = data.initItems.filter(i => i.subtype === 'csv' && !(i.before === 0 && i.after === 0));
+        csvItems.forEach(item => {
+            if (yearMode === 'second' && !item.includedInSecondYear) return;
+            const userPart = (item.users && item.users !== '0名') ? `・利用人数：${item.users}<br>` : '';
+            const note = `<span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
+            rows += `<tr class="flow-row">
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">CSVバッチ連携初期構築費用</td>
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${userPart}${note}</td>
+                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
+            </tr>`;
+        });
+
+        // ── 4. BPaaSチケットプラン：専用行（subtype='bpaas'）──
+        const bpaasItems = data.initItems.filter(i => i.subtype === 'bpaas' && !(i.before === 0 && i.after === 0));
+        bpaasItems.forEach(item => {
+            if (yearMode === 'second' && !item.includedInSecondYear) return;
+            // 常に「BPaaSチケットプラン-XX枚」形式に正規化
+            const ticketMatch = item.name.match(/(\d+)枚/);
+            const displayName = ticketMatch ? `BPaaSチケットプラン-${ticketMatch[1]}枚` : item.name.replace(/_/, '-');
+            const userPart = (item.users && item.users !== '0名') ? `・利用人数：${item.users}<br>` : '';
+            const note = `<span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>`;
+            rows += `<tr class="flow-row">
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${displayName}</td>
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${userPart}${note}</td>
+                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(item.before, item.after).text}</td>
+            </tr>`;
+        });
+
+        // ── システム利用料 ──
+        data.systemItems.forEach((item, idx) => {
+            let b, a;
+            const cMonths = getContractMonths(); // 12 or custom period months
+            if (yearMode === 'second' && !isM) { b = item.monthBefore * item.months; a = item.monthAfter * item.months; }
+            else if (!isM) { b = item.monthBefore * cMonths; a = item.monthAfter * cMonths; }
+            else { b = item.monthBefore; a = item.monthAfter; }
+            runMB += item.monthBefore; runMA += item.monthAfter;
+
+            let suffix;
+            if (yearMode === 'second' && !isM) {
+                let opts = "";
+                for (let i = 1; i <= 24; i++) opts += `<option value="${i}" ${i === item.months ? 'selected' : ''}>${i}</option>`;
+                suffix = ` <span class="text-xs text-gray-500">× <select class="month-select" onchange="onMonthChange(this,${idx})">${opts}</select> ヶ月</span>`;
+            } else if (isM) {
+                suffix = ' (月額)';
+            } else if (contractPeriod.enabled) {
+                suffix = ` (×${cMonths}ヶ月)`;
+            } else {
+                suffix = ' (年額)';
+            }
+
+            // タレントマネジメントは名称を統一（カッコ内のプラン名などを除去）
+            let displayItemName = item.name;
+            if (item.name.includes('タレントマネジメント')) displayItemName = 'タレントマネジメント';
+
+            const uLabel = (item.name.includes('採用') || item.detail.includes('採用')) ? '採用者数' : '利用人数';
+            // EXスタンダード / BPaaS / 組織診断サーベイ には補足注記
+            const needsNote = item.name.includes('BPaaS') || item.detail.includes('EXスタンダード') || item.name.includes('組織診断サーベイ');
+            const noteHtml = needsNote ? `<br><span class="text-gray-500 text-xs">※ご支援範囲は別途資料にて補足させていただきます。</span>` : '';
+            // 詳細テキストの先頭に「・」を付ける
+            const detailHtml = item.detail ? `・${item.detail}` : '';
+            rows += `<tr>
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${displayItemName}${suffix}</td>
+                <td class="border border-gray-300 p-3 align-top" contenteditable="true">${item.users !== '0名' ? `・${uLabel}：${item.users}<br>` : ''}${detailHtml}${noteHtml}</td>
+                <td class="border border-gray-300 p-3 align-top text-right" contenteditable="true">${calculateDiscount(b, a).text}</td>
+            </tr>`;
+        });
+
+        if (isM) rows += `<tr>
+            <td class="border border-gray-300 p-3 font-bold" contenteditable="true">月額費用合計</td>
+            <td class="border border-gray-300 p-3" contenteditable="true">システム利用料 合計</td>
+            <td class="border border-gray-300 p-3 text-right font-bold" contenteditable="true">${calculateDiscount(runMB, runMA).text}</td>
+        </tr>`;
+
+        let tB, tA, lbl;
+        if (yearMode === 'second') {
+            tB = 0; tA = 0;
+            data.systemItems.forEach(i => { tB += i.monthBefore*(isM?1:i.months); tA += i.monthAfter*(isM?1:i.months); });
+            data.initItems.forEach(i => { if(i.includedInSecondYear){ tB+=i.before; tA+=i.after; }});
+            data.supportItems.forEach(i => { if(i.includedInSecondYear){ tB+=i.before; tA+=i.after; }});
+            lbl = "2年目以降合計/年";
+        } else {
+            tB = isM ? (runMB + data.totals.initB) : data.totals.firstYearB;
+            tA = isM ? (runMA + data.totals.initA) : data.totals.firstYearA;
+            lbl = getFirstYearTotalLabel(isM);
+        }
+        rows += `<tr class="total-row">
+            <td class="border border-gray-300 p-3 text-right font-bold" colspan="2" contenteditable="true">${lbl}</td>
+            <td class="border border-gray-300 p-3 text-right" contenteditable="true">${calculateDiscount(tB, tA).text}</td>
+        </tr>`;
+        if (yearMode === 'first') {
+            const rB = isM ? runMB : data.totals.recurringYB;
+            const rA = isM ? runMA : data.totals.recurringYA;
+            // カスタム契約期間時は2年目以降行を非表示
+            if (!contractPeriod.enabled || isM) {
+                rows += `<tr class="total-row">
+                    <td class="border border-gray-300 p-3 text-right font-bold" colspan="2" contenteditable="true">2年目以降合計/年</td>
+                    <td class="border border-gray-300 p-3 text-right" contenteditable="true">${calculateDiscount(rB, rA).text}</td>
+                </tr>`;
+            }
+        }
+
+        document.getElementById('quote-table-container').innerHTML = `
+            <table style="width:100%; table-layout:fixed; border-collapse:collapse;">
+                <colgroup>
+                    <col id="col-0" style="width:${colWidths[0]}%;">
+                    <col id="col-1" style="width:${colWidths[1]}%;">
+                    <col id="col-2" style="width:${colWidths[2]}%;">
+                </colgroup>
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="border border-gray-300 p-3 text-center" data-col="0">項目<div class="col-resizer" data-col="0"></div></th>
+                        <th class="border border-gray-300 p-3 text-center" data-col="1">詳細<div class="col-resizer" data-col="1"></div></th>
+                        <th class="border border-gray-300 p-3 text-center" data-col="2">金額(税別)</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+
+    function initResizableColumns() {
+        document.querySelectorAll('.col-resizer').forEach(r => {
+            r.addEventListener('mousedown', startResize);
+        });
+    }
+
+    function startResize(e) {
+        e.preventDefault();
+        const colIdx = parseInt(e.target.dataset.col);
+        const nextIdx = colIdx + 1;
+        if (nextIdx >= colWidths.length) return;
+        const startX = e.clientX;
+        const startCur  = colWidths[colIdx];
+        const startNext = colWidths[nextIdx];
+        const tableW = (document.querySelector('#quote-table-container table') || {}).offsetWidth || 1100;
+        e.target.classList.add('resizing');
+        function onMove(ev) {
+            const diff = ev.clientX - startX;
+            const diffPct = (diff / tableW) * 100;
+            const minPct = (80 / tableW) * 100;
+            const actualDiff = Math.min(Math.max(diffPct, -(startCur - minPct)), startNext - minPct);
+            colWidths[colIdx]  = startCur  + actualDiff;
+            colWidths[nextIdx] = startNext - actualDiff;
+            const c0 = document.getElementById(`col-${colIdx}`);
+            const c1 = document.getElementById(`col-${nextIdx}`);
+            if (c0) c0.style.width = colWidths[colIdx]  + '%';
+            if (c1) c1.style.width = colWidths[nextIdx] + '%';
+        }
+        function onUp() {
+            e.target.classList.remove('resizing');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }
+
+    function renderRemarks(data, yearMode) {
+        const now = new Date();
+        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+        const weekdays = ["日","月","火","水","木","金","土"];
+        const deadline = `${end.getFullYear()}年${end.getMonth()+1}月${end.getDate()}日(${weekdays[end.getDay()]})`;
+
+        const hasSurvey = data.systemItems.some(i => i.name.includes('組織診断サーベイ') || i.detail.includes('組織診断サーベイ')) ||
+                          data.initItems.some(i => i.name.includes('組織診断サーベイ')) ||
+                          data.supportItems.some(i => i.detail.includes('組織診断サーベイ'));
+        const contractText = hasSurvey
+            ? "ご契約は2年単位での契約となり、費用は1年単位のご利用料金を一括で頂戴しております。"
+            : "ご契約は年間単位での契約となり、費用は一括で頂戴しております。";
+
+        let html = "<ul>";
+        if (yearMode === 'second') {
+            let repM = data.systemItems[0]?.months || 12;
+            html += `<li>・契約期間は202◯年◯月のため差額の<strong class="text-red-600">${repM}ヶ月分</strong>として記載しております。</li>`;
+        } else {
+            html += `<li>・上記見積額は「<strong class="text-red-600">${deadline}迄</strong>」の申込に限り有効です。</li>`;
+        }
+        html += `<li>・ 料金表の金額には消費税は含まれておりません。</li><li>・ ${contractText}</li><li>・ 毎月月末に人数の集計をさせて頂き、料金テーブルの変動がある場合は差額をご請求させて頂きます。</li><li>・ ご利用人数には、システムに登録するユーザー全員が対象となります。</li></ul>`;
+        document.getElementById('remarks-container').innerHTML = html;
+    }
+
+    function renderAdditionalCostSelector() {
+        const container = document.getElementById('init-checkbox-list');
+        container.innerHTML = '<p class="font-bold mb-1">追加の初期費用選択:</p>';
+        currentQuoteData.initItems.forEach((item, index) => {
+            if (item.before === 0 && item.after === 0) return;
+            const div = document.createElement('div');
+            div.innerHTML = `<label><input type="checkbox" onchange="currentQuoteData.initItems[${index}].includedInSecondYear=this.checked; renderAll();"> ${item.name} (${formatCurrency(item.after)})</label>`;
+            container.appendChild(div);
+        });
+    }
+
+    async function generateCanvas() {
+        const area = document.getElementById('capture-area');
+        const resizers = area.querySelectorAll('.col-resizer');
+        resizers.forEach(r => r.style.display = 'none');
+        const selects = area.querySelectorAll('select.month-select');
+        const backups = [];
+        selects.forEach(s => {
+            const span = document.createElement('span');
+            span.textContent = s.value; span.className = 'font-bold underline mx-1';
+            s.parentNode.insertBefore(span, s); s.style.display = 'none';
+            backups.push({ s, span });
+        });
+        const canvas = await html2canvas(area, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+        backups.forEach(b => { b.span.remove(); b.s.style.display = 'inline-block'; });
+        resizers.forEach(r => r.style.display = '');
+        return canvas;
+    }
+
+    async function exportPDF() {
+        const loading = document.getElementById('pdf-loading');
+        loading.classList.add('active');
+        try {
+            const canvas = await generateCanvas();
+            const { jsPDF } = window.jspdf;
+
+            // 画像の縦横比を見て向きを自動選択
+            const isLandscape = canvas.width > canvas.height;
+            const pdf = new jsPDF({ orientation: isLandscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+            const pageW = pdf.internal.pageSize.getWidth();
+            const pageH = pdf.internal.pageSize.getHeight();
+            const margin = 14;
+            const printW = pageW - margin * 2;
+            const printH = pageH - margin * 2;
+
+            // 縦横比を保ちつつ印刷領域に収める
+            const ratio = canvas.width / canvas.height;
+            let drawW = printW;
+            let drawH = drawW / ratio;
+            if (drawH > printH) { drawH = printH; drawW = drawH * ratio; }
+
+            // 余白均等（上下左右センタリング）
+            const x = margin + (printW - drawW) / 2;
+            const y = margin + (printH - drawH) / 2;
+
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, drawW, drawH);
+            pdf.save('見積もり.pdf');
+        } catch(err) {
+            console.error(err);
+            alert('PDF生成に失敗しました。');
+        } finally {
+            loading.classList.remove('active');
+        }
+    }
+
+    // ======================================================
+    // バクラク/Sapozu 共有用Format 生成ロジック
+    // ======================================================
+    const OPTION_KEYWORDS = [
+        'ラーニング', 'IP制限', 'SSO', 'ストレスチェック',
+        'Brain', 'AIチャットボット', 'AI チャットボット',
+        '退職者プラン', '申請ワークフロー', 'ワークフロー'
+    ];
+    const STOCK_KEYWORDS = [
+        'タレントマネジメント', '採用ソリューション', '採用',
+        '労務管理', '労務', 'WorkSuite',
+        '組織診断サーベイ', 'パルスサーベイ', '360度サーベイ',
+        '勤怠管理', '福利厚生',
+        'Chalaza', '奉行クラウド'
+    ];
+
+    function classifyLine(parts, fullName) {
+        const productName = parts[0];
+        // フロー判定（初期費用・PS・BPaaSチケット・CSVバッチ）
+        if (productName.startsWith('初期費用')) return 'フロー';
+        if (productName.startsWith('PS/その他')) return 'フロー';
+        if (fullName.includes('BPaaSチケット')) return 'フロー';
+        if (fullName.includes('CSVバッチ')) return 'フロー';
+        // オプション判定
+        if (OPTION_KEYWORDS.some(k => productName.includes(k) || fullName.includes(k))) return 'オプション';
+        // ストック（システム利用料）
+        return 'ストック';
+    }
+
+    function formatYen(num) {
+        return new Intl.NumberFormat('ja-JP').format(Math.round(num)) + '円';
+    }
+
+    function renderSapozuFormat() {
+        const data = currentQuoteData;
+        if (!data.rawLines) return;
+
+        let flowTotal = 0, stockTotal = 0;
+        const flowLines = [], stockLines = [], optionLines = [];
+
+        data.rawLines.forEach(({ line, parts, beforeP, afterP, fullName }) => {
+            const cat = classifyLine(parts, fullName);
+            // 初期費用 after=0 は記載不要
+            if (parts[0].startsWith('初期費用') && afterP === 0) return;
+
+            const tag = `[${cat}]${line}`;
+            if (cat === 'フロー') {
+                flowTotal += afterP;
+                flowLines.push(tag);
+            } else if (cat === 'オプション') {
+                // ストック系オプションは月額×12で合計へ
+                stockTotal += afterP * 12;
+                optionLines.push(tag);
+            } else {
+                // ストック：月額×12
+                stockTotal += afterP * 12;
+                stockLines.push(tag);
+            }
+        });
+
+        const allDetailLines = [...flowLines, ...stockLines, ...optionLines];
+
+        const output = [
+            '■合計金額：',
+            `[フロー]${formatYen(flowTotal)}`,
+            `[ストック]${formatYen(stockTotal)}`,
+            '',
+            '■詳細金額：',
+            ...allDetailLines
+        ].join('\n');
+
+        document.getElementById('sapozu-output').textContent = output;
+    }
+
+    function copySapozuText() {
+        const text = document.getElementById('sapozu-output').textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            const toast = document.getElementById('sapozu-copy-toast');
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 2000);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const area = document.getElementById('capture-area');
+        const menu = document.getElementById('context-menu');
+        area.addEventListener('contextmenu', e => { e.preventDefault(); menu.style.top=`${e.clientY}px`; menu.style.left=`${e.clientX}px`; menu.classList.remove('hidden'); });
+        document.addEventListener('click', () => menu.classList.add('hidden'));
+        document.getElementById('save-image-btn').addEventListener('click', async () => { const cv = await generateCanvas(); const a = document.createElement('a'); a.href=cv.toDataURL(); a.download='見積もり.png'; a.click(); });
+        document.getElementById('open-image-tab-btn').addEventListener('click', async () => { const cv = await generateCanvas(); const w=window.open(); w.document.write(`<img src="${cv.toDataURL()}">`); });
+    });
+</script>
+</body>
+</html>
